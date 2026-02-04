@@ -1,0 +1,11 @@
+{
+  "name": "mcp",
+  "private": true,
+  "version": "0.1.0",
+  "devDependencies": {
+    "dotenv-cli": "^7.4.2"
+  },
+  "scripts": {
+    "dev": "dotenv -e .env.local -- npx -y @commercetools/commerce-mcp --remote=true --stateless=true --port=8888 --toolOutputFormat=json --authType=client_credentials --tools=product-search.read,products.read,cart.create,cart.read,cart.update,shipping-methods.read,order.create"
+  }
+}

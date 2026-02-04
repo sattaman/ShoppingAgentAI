@@ -1,4 +1,4 @@
-import { Message, TextStreamMessage } from "@/components/message";
+import { Message, TextStreamMessage } from "@/components/chat";
 import { google } from "@ai-sdk/google";
 import { CoreMessage, generateId, streamText, tool } from "ai";
 import {
@@ -15,8 +15,7 @@ import {
   normalizeCart,
   normalizeProducts,
 } from "@/lib/commerce";
-import { ProductGrid } from "@/components/product-grid";
-import { CartView } from "@/components/cart-view";
+import { ProductGrid, CartView } from "@/components/commerce";
 
 const toolListPromise = (() => {
   let cached: Awaited<ReturnType<typeof listMcpTools>> | null = null;
@@ -81,7 +80,7 @@ const sendMessage = async (message: string) => {
   const toolList = await toolListPromise();
 
   // Build tools for streamText (with execute instead of generate)
-  const tools: Record<string, ReturnType<typeof tool>> = {};
+  const tools: Record<string, any> = {};
   for (const mcpTool of toolList.tools) {
     if (allowedToolNames && !allowedToolNames.has(mcpTool.name)) continue;
 
@@ -162,7 +161,7 @@ Rules:
 
     textStream.done();
     
-    const finalResult = await result;
+    await result;
     messages.done([
       ...(messages.get() as CoreMessage[]),
       { role: "assistant", content: fullText || "Done" },

@@ -4,9 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 type McpClient = Client;
 
 declare global {
-  // eslint-disable-next-line no-var
   var __mcpClient: McpClient | undefined;
-  // eslint-disable-next-line no-var
   var __mcpClientPromise: Promise<McpClient> | undefined;
 }
 

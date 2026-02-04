@@ -1,26 +1,6 @@
-export type ProductCard = {
-  id: string;
-  name: string;
-  description?: string;
-  imageUrl?: string;
-  price?: string;
-  sku?: string;
-};
+import { ProductCard, CartLineItem, CartSummary } from "@/types/commerce";
 
-export type CartLineItem = {
-  id: string;
-  name: string;
-  quantity: number;
-  price?: string;
-  total?: string;
-  imageUrl?: string;
-};
-
-export type CartSummary = {
-  id: string;
-  total?: string;
-  lineItems: CartLineItem[];
-};
+export type { ProductCard, CartLineItem, CartSummary };
 
 const moneyFormatterCache = new Map<string, Intl.NumberFormat>();
 

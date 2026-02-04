@@ -35,9 +35,11 @@ export const TextStreamMessage = ({
 export const Message = ({
   role,
   content,
+  isError,
 }: {
   role: "assistant" | "user";
   content: string | ReactNode;
+  isError?: boolean;
 }) => {
   return (
     <motion.div
@@ -50,7 +52,7 @@ export const Message = ({
       </div>
 
       <div className="flex flex-col gap-1 w-full">
-        <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
+        <div className={`flex flex-col gap-4 ${isError ? "text-red-500" : "text-zinc-800 dark:text-zinc-300"}`}>
           {content}
         </div>
       </div>

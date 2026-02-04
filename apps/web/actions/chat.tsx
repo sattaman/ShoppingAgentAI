@@ -1,6 +1,6 @@
 "use server";
 
-import { TextStreamMessage } from "@/components/chat";
+import { TextStreamMessage, Message } from "@/components/chat";
 import { ProductGrid } from "@/components/commerce";
 import { google } from "@ai-sdk/google";
 import { CoreMessage, generateId, streamText, tool } from "ai";
@@ -19,104 +19,106 @@ import { logger } from "@/lib/logger";
 const sendMessage = async (message: string) => {
   "use server";
 
-  logger.info("sendMessage called", { message });
+  logger.info("Chat request", { message });
 
-  const messages = getMutableAIState<typeof AI>("messages");
+  const aiState = getMutableAIState<typeof AI>("messages");
   
-  let mcpTools;
-  try {
-    mcpTools = await getMcpTools();
-    logger.debug("MCP tools loaded", { count: mcpTools.tools.length });
-  } catch (err) {
-    logger.error("Failed to load MCP tools", err);
-    throw err;
-  }
+  // Load MCP tools
+  const mcpTools = await getMcpTools();
+  logger.debug("Tools available", { count: mcpTools.tools.length });
 
+  // Convert MCP tools to AI SDK format
   const tools: Record<string, any> = {};
   for (const mcpTool of mcpTools.tools) {
     tools[mcpTool.name] = tool({
       description: mcpTool.description ?? "",
       parameters: buildZodSchema(mcpTool.inputSchema as any),
       execute: async (args) => {
-        logger.info(`Calling MCP tool: ${mcpTool.name}`, args);
-        try {
-          const result = await callMcpTool(mcpTool.name, args);
-          logger.debug(`MCP tool result: ${mcpTool.name}`, result);
-          return { toolName: mcpTool.name, result };
-        } catch (err) {
-          logger.error(`MCP tool failed: ${mcpTool.name}`, err);
-          throw err;
-        }
+        logger.info("Tool call", { tool: mcpTool.name, args });
+        const result = await callMcpTool(mcpTool.name, args);
+        logger.debug("Tool response", { tool: mcpTool.name });
+        return { toolName: mcpTool.name, result };
       },
     });
   }
 
-  messages.update([
-    ...(messages.get() as CoreMessage[]),
+  // Update conversation state
+  aiState.update([
+    ...(aiState.get() as CoreMessage[]),
     { role: "user", content: message },
   ]);
 
+  // Set up streaming UI
   const uiStream = createStreamableUI();
   const textStream = createStreamableValue("");
   uiStream.update(<TextStreamMessage content={textStream.value} />);
 
+  const finishWithError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("Chat failed", { error: message });
+    
+    const displayMsg = message.includes("quota") || message.includes("rate")
+      ? "Rate limit reached. Please wait a moment and try again."
+      : "Something went wrong. Please try again.";
+    
+    textStream.done();
+    aiState.done([...(aiState.get() as CoreMessage[]), { role: "assistant", content: displayMsg }]);
+    uiStream.update(<Message role="assistant" content={displayMsg} isError />);
+    uiStream.done();
+  };
+
+  // Process in background
   (async () => {
     try {
-      logger.debug("Starting streamText");
-      const result = streamText({
+      const response = await streamText({
         model: google(process.env.GOOGLE_MODEL ?? "gemini-2.5-flash"),
         system: "You are an AI shopping assistant. Use tools to search products. Be concise.",
-        messages: messages.get() as CoreMessage[],
+        messages: aiState.get() as CoreMessage[],
         tools,
         maxSteps: 3,
       });
 
       let fullText = "";
 
-      logger.debug("Awaiting result stream");
-      const stream = await result;
-      logger.debug("Got stream, iterating fullStream");
-      
-      for await (const part of stream.fullStream) {
-        logger.debug("Stream part received", { type: part.type });
-        if (part.type === "text-delta") {
-          fullText += part.textDelta;
-          textStream.update(fullText);
-        } else if (part.type === "error") {
-          logger.error("Stream error", part);
-          const errorMsg = (part as any).error?.message || "An error occurred";
-          if (errorMsg.includes("quota")) {
-            uiStream.append(<div className="text-red-500 text-sm p-2">API rate limit reached. Please wait a moment and try again.</div>);
-          } else {
-            uiStream.append(<div className="text-red-500 text-sm p-2">Error: {errorMsg}</div>);
-          }
-        } else if (part.type === "tool-result") {
-          const { toolName, result: toolResult } = part.result as { toolName: string; result: unknown };
-          logger.debug("Processing tool result", { toolName });
-          const parsed = extractJsonFromToolContent((toolResult as any)?.content) ?? toolResult;
+      for await (const part of response.fullStream) {
+        switch (part.type) {
+          case "text-delta":
+            fullText += part.textDelta;
+            textStream.update(fullText);
+            break;
 
-          if (toolName.toLowerCase().includes("product")) {
-            const products = normalizeProducts(parsed);
-            logger.info("Products normalized", { count: products.length });
-            if (products.length > 0) {
-              uiStream.append(<ProductGrid title="Results" products={products} />);
+          case "tool-result": {
+            const { toolName, result } = part.result as { toolName: string; result: unknown };
+            const parsed = extractJsonFromToolContent((result as any)?.content) ?? result;
+
+            if (toolName.toLowerCase().includes("product")) {
+              const products = normalizeProducts(parsed);
+              logger.info("Products loaded", { count: products.length });
+              if (products.length > 0) {
+                uiStream.append(<ProductGrid title="Results" products={products} />);
+              }
             }
+            break;
           }
+
+          case "error":
+            return finishWithError((part as any).error);
         }
       }
 
-      logger.debug("Stream complete", { fullTextLength: fullText.length });
       textStream.done();
-      messages.done([
-        ...(messages.get() as CoreMessage[]),
+      aiState.done([
+        ...(aiState.get() as CoreMessage[]),
         { role: "assistant", content: fullText || "Done" },
       ]);
-      if (!fullText) uiStream.update(<></>);
+
+      if (!fullText) {
+        uiStream.update(<></>);
+      }
       uiStream.done();
+
     } catch (err) {
-      logger.error("Stream processing failed", err);
-      textStream.done();
-      uiStream.done();
+      finishWithError(err);
     }
   })();
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeProducts, normalizeCart, extractJsonFromToolContent } from './commerce'
+import { normalizeProducts, extractJsonFromToolContent } from './commerce'
 
 describe('normalizeProducts', () => {
   it('returns empty array for null/undefined', () => {
@@ -31,27 +31,6 @@ describe('normalizeProducts', () => {
     }
     const result = normalizeProducts(data)
     expect(result[0].price).toBe('$19.99')
-  })
-})
-
-describe('normalizeCart', () => {
-  it('returns null for invalid data', () => {
-    expect(normalizeCart(null)).toBeNull()
-    expect(normalizeCart({})).toBeNull()
-  })
-
-  it('normalizes cart with line items', () => {
-    const data = {
-      id: 'cart-1',
-      lineItems: [
-        { id: 'li-1', name: { en: 'Item 1' }, quantity: 2 }
-      ],
-      totalPrice: { centAmount: 5000, currencyCode: 'USD' }
-    }
-    const result = normalizeCart(data)
-    expect(result?.id).toBe('cart-1')
-    expect(result?.lineItems).toHaveLength(1)
-    expect(result?.total).toBe('$50.00')
   })
 })
 

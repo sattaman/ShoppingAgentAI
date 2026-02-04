@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { logger } from "./logger";
 
 type McpClient = Client;
 
@@ -21,12 +22,14 @@ export async function getMcpClient(): Promise<McpClient> {
   if (!global.__mcpClientPromise) {
     global.__mcpClientPromise = (async () => {
       const url = new URL(requireEnv("MCP_URL"));
+      logger.info("Connecting to MCP server", { url: url.toString() });
       const client = new Client(
         { name: "ct-poc-ui", version: "0.1.0" },
         { capabilities: {} },
       );
       const transport = new StreamableHTTPClientTransport(url);
       await client.connect(transport);
+      logger.info("MCP client connected");
       return client;
     })();
   }
@@ -37,13 +40,37 @@ export async function getMcpClient(): Promise<McpClient> {
 
 export async function listMcpTools() {
   const client = await getMcpClient();
-  return client.listTools({});
+  logger.debug("Listing MCP tools");
+  const result = await client.listTools({});
+  logger.debug("MCP tools listed", { count: result.tools.length });
+  return result;
 }
 
 export async function callMcpTool(toolName: string, args?: Record<string, unknown>) {
   const client = await getMcpClient();
-  return client.callTool({
-    name: toolName,
-    arguments: args ?? {},
-  });
+  logger.info("Calling MCP tool", { toolName, args });
+  try {
+    const result = await client.callTool({
+      name: toolName,
+      arguments: args ?? {},
+    });
+    logger.debug("MCP tool response", { toolName, result });
+    return result;
+  } catch (err) {
+    logger.error("MCP tool call failed", { toolName, error: err });
+    throw err;
+  }
+}
+
+let cachedTools: Awaited<ReturnType<typeof listMcpTools>> | null = null;
+
+export async function getMcpTools() {
+  if (!cachedTools) {
+    try {
+      cachedTools = await listMcpTools();
+    } catch {
+      return { tools: [] };
+    }
+  }
+  return cachedTools;
 }

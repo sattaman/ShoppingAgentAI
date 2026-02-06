@@ -16,8 +16,20 @@ export function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodTypeAny {
     case "boolean":
       zodType = z.boolean();
       break;
+    case "object":
+      zodType = z.record(z.any());
+      break;
+    case "array": {
+      const items = schema.items as Record<string, unknown> | undefined;
+      if (items) {
+        zodType = z.array(jsonSchemaToZod(items));
+      } else {
+        zodType = z.array(z.string());
+      }
+      break;
+    }
     default:
-      zodType = z.string();
+      zodType = z.any();
   }
   return desc ? zodType.describe(desc) : zodType;
 }

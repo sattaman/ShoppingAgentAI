@@ -1,5 +1,4 @@
 import { cookies } from 'next/headers';
-import { v4 as uuidv4 } from 'uuid';
 
 const ANONYMOUS_ID_COOKIE = 'ct_anonymous_id';
 
@@ -8,7 +7,7 @@ export async function getOrCreateAnonymousId(): Promise<string> {
   let anonymousId = cookieStore.get(ANONYMOUS_ID_COOKIE)?.value;
 
   if (!anonymousId) {
-    anonymousId = uuidv4();
+    anonymousId = crypto.randomUUID();
     cookieStore.set(ANONYMOUS_ID_COOKIE, anonymousId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

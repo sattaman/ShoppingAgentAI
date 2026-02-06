@@ -11,13 +11,34 @@ let messageId = 0;
 export default function Home() {
   const { sendMessage } = useActions();
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Array<{ id: number; node: ReactNode }>>([]);
+  const [messages, setMessages] = useState<
+    Array<{ id: number; node: ReactNode }>
+  >([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [messagesContainerRef, messagesEndRef] = useScrollToBottom<HTMLDivElement>();
+  const [messagesContainerRef, messagesEndRef] =
+    useScrollToBottom<HTMLDivElement>();
 
   const suggestedActions = [
-    { title: "Browse", label: "all products", action: "Show me all products" },
-    { title: "Search", label: "by category", action: "What product categories do you have?" },
+    {
+      title: "Show me",
+      label: "armchairs",
+      action: "Show me armchairs",
+    },
+    {
+      title: "Find",
+      label: "glassware",
+      action: "Show me glassware",
+    },
+    {
+      title: "Browse",
+      label: "bedroom furniture",
+      action: "Show me bedroom furniture",
+    },
+    {
+      title: "Search for",
+      label: "bar accessories",
+      action: "Show me bar accessories",
+    },
   ];
 
   const addMessage = (node: ReactNode) => {
@@ -26,21 +47,30 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-row justify-center pb-20 h-dvh bg-white dark:bg-zinc-900">
-      <div className="flex flex-col justify-between gap-4">
+    <div className="min-h-dvh bg-[radial-gradient(circle_at_top,_rgba(20,20,20,0.06),_transparent_45%),linear-gradient(to_bottom,#f8f7f3,#f1f1ec_45%,#efece6)] dark:bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_50%),linear-gradient(to_bottom,#0b0b0c,#111214_45%,#0b0b0c)]">
+      <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col px-4 pb-24 pt-10">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+              Conversational Commerce
+            </div>
+            <div className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+              Shopping Agent
+            </div>
+          </div>
+        </div>
         <div
           ref={messagesContainerRef}
-          className="flex flex-col gap-3 h-full w-dvw items-center overflow-y-scroll"
+          className="flex flex-1 flex-col gap-4 overflow-y-auto pb-6"
         >
           {messages.length === 0 && (
-            <motion.div className="h-[350px] px-4 w-full md:w-[500px] md:px-0 pt-20">
-              <div className="border rounded-lg p-6 flex flex-col gap-4 text-zinc-500 text-sm dark:text-zinc-400 dark:border-zinc-700">
-                <p className="text-zinc-900 dark:text-zinc-50 font-medium">
-                  Shopping Agent AI
-                </p>
-                <p>
-                  Ask me to show you products from the catalogue.
-                </p>
+            <motion.div className="rounded-3xl border border-zinc-200/70 bg-white/80 p-6 text-sm text-zinc-600 shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-300">
+              <div className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+                Find products by describing your room, budget, and style.
+              </div>
+              <div className="mt-3 text-zinc-500 dark:text-zinc-400">
+                I can search the catalog, compare options, and build your cart.
+                Try “light oak bedside tables under $200”.
               </div>
             </motion.div>
           )}
@@ -50,7 +80,7 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-2 w-full px-4 md:px-0 mx-auto md:max-w-[500px] mb-4">
+        <div className="grid gap-2 sm:grid-cols-2">
           {messages.length === 0 &&
             suggestedActions.map((action, index) => (
               <motion.div
@@ -65,34 +95,46 @@ export default function Home() {
                     const response = await sendMessage(action.action);
                     addMessage(response);
                   }}
-                  className="w-full text-left border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 rounded-lg p-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex flex-col"
+                  className="w-full rounded-2xl border border-zinc-200/70 bg-white/80 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900/70 dark:hover:border-zinc-500"
                 >
-                  <span className="font-medium">{action.title}</span>
-                  <span className="text-zinc-500 dark:text-zinc-400">{action.label}</span>
+                  <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {action.title}
+                  </div>
+                  <div className="text-sm text-zinc-500 dark:text-zinc-400">
+                    {action.label}
+                  </div>
                 </button>
               </motion.div>
             ))}
         </div>
 
-        <form
-          className="flex flex-col gap-2 relative items-center"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (!input.trim()) return;
-            addMessage(<Message role="user" content={input} />);
-            setInput("");
-            const response = await sendMessage(input);
-            addMessage(response);
-          }}
-        >
-          <input
-            ref={inputRef}
-            className="bg-zinc-100 rounded-md px-2 py-1.5 w-full outline-none dark:bg-zinc-700 text-zinc-800 dark:text-zinc-300 md:max-w-[500px] max-w-[calc(100dvw-32px)]"
-            placeholder="Ask about products..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
-        </form>
+        <div className="sticky bottom-6 mt-4">
+          <form
+            className="flex items-center gap-3 rounded-full border border-zinc-200/70 bg-white/90 px-4 py-2 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/80"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!input.trim()) return;
+              addMessage(<Message role="user" content={input} />);
+              setInput("");
+              const response = await sendMessage(input);
+              addMessage(response);
+            }}
+          >
+            <input
+              ref={inputRef}
+              className="flex-1 bg-transparent text-sm text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-200 dark:placeholder:text-zinc-500"
+              placeholder="Ask about products, styles, or budgets..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+            />
+            <button
+              type="submit"
+              className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-zinc-800"
+            >
+              Send
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

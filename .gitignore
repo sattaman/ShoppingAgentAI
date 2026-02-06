@@ -24,3 +24,7 @@ out
 .yarn/build-state.yml
 !.yarn/releases
 .kiro
+
+# exploration / scratch files
+*.txt
+MCP_*.md

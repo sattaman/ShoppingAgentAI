@@ -3,34 +3,7 @@
 import { motion } from "framer-motion";
 import { BotIcon, UserIcon } from "@/components/ui";
 import { ReactNode } from "react";
-import { StreamableValue, useStreamableValue } from "ai/rsc";
 import { Streamdown } from "streamdown";
-
-export const TextStreamMessage = ({
-  content,
-}: {
-  content: StreamableValue;
-}) => {
-  const [text] = useStreamableValue(content);
-
-  return (
-    <motion.div
-      className={`flex flex-row gap-4 px-4 w-full md:w-[500px] md:px-0 first-of-type:pt-20`}
-      initial={{ y: 5, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-    >
-      <div className="size-[24px] flex flex-col justify-center items-center flex-shrink-0 text-zinc-400">
-        <BotIcon />
-      </div>
-
-      <div className="flex flex-col gap-1 w-full">
-        <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
-          <Streamdown>{text}</Streamdown>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
 
 export const Message = ({
   role,
@@ -41,19 +14,33 @@ export const Message = ({
   content: string | ReactNode;
   isError?: boolean;
 }) => {
+  const isUser = role === "user";
+  const renderedContent =
+    typeof content === "string" ? <Streamdown>{content}</Streamdown> : content;
   return (
     <motion.div
-      className={`flex flex-row gap-4 px-4 w-full md:w-[500px] md:px-0 first-of-type:pt-20`}
+      className={`flex w-full px-4 md:px-0 ${isUser ? "justify-end" : "justify-start"}`}
       initial={{ y: 5, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
     >
-      <div className="size-[24px] flex flex-col justify-center items-center flex-shrink-0 text-zinc-400">
-        {role === "assistant" ? <BotIcon /> : <UserIcon />}
-      </div>
-
-      <div className="flex flex-col gap-1 w-full">
-        <div className={`flex flex-col gap-4 ${isError ? "text-red-500" : "text-zinc-800 dark:text-zinc-300"}`}>
-          {content}
+      <div className={`flex max-w-[720px] items-start gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-sm ${
+            isUser
+              ? "border-zinc-900 bg-zinc-900 text-white"
+              : "border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+          }`}
+        >
+          {isUser ? <UserIcon /> : <BotIcon />}
+        </div>
+        <div
+          className={`chat-prose rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm ${
+            isUser
+              ? "bg-zinc-900 text-white"
+              : "border border-zinc-200/70 bg-white/90 text-zinc-800 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200"
+          } ${isError ? "border-red-300 text-red-600" : ""}`}
+        >
+          {renderedContent}
         </div>
       </div>
     </motion.div>

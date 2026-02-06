@@ -1,13 +1,12 @@
 "use server";
 
-import { TextStreamMessage, Message } from "@/components/chat";
-import { ProductGrid } from "@/components/commerce";
+import { ProductGrid, ProductGridSkeleton } from "@/components/commerce";
+import { Message } from "@/components/chat";
 import { google } from "@ai-sdk/google";
 import { CoreMessage, generateId, streamText, tool, jsonSchema } from "ai";
 import {
   createAI,
   createStreamableUI,
-  createStreamableValue,
   getMutableAIState,
 } from "ai/rsc";
 import { ReactNode } from "react";
@@ -16,6 +15,7 @@ import { callMcpTool, getMcpTools } from "@/lib/mcp";
 import { extractJsonFromToolContent, normalizeProducts } from "@/lib/commerce";
 import { logger } from "@/lib/logger";
 import { getOrCreateAnonymousId } from "@/lib/session";
+import { SHOPPING_ASSISTANT_PROMPT } from "@/lib/prompts";
 
 // Tools that need anonymousId injected
 const CART_TOOLS = ["create_cart", "read_cart", "update_cart"];
@@ -29,7 +29,8 @@ const toolOverrides: Record<string, z.ZodTypeAny> = {
         language: z.string().default("en-GB").describe('Language code. MUST use "en-GB" for English products'),
         value: z.string().describe('The search term, e.g., "chairs"'),
       }).describe('Full-text search query'),
-    }).describe('Search query object. Example: {"fullText": {"field": "name", "language": "en-GB", "value": "chairs"}}'),
+    }).describe('Search query object'),
+    productProjectionParameters: z.object({}).default({}).describe('MUST include this empty object to get full product data'),
     limit: z.number().min(1).max(100).optional(),
     offset: z.number().min(0).optional(),
   }),
@@ -66,6 +67,7 @@ const sendMessage = async (message: string) => {
       },
     });
   }
+  logger.info("Tools registered", { count: Object.keys(tools).length, names: Object.keys(tools) });
 
   // Update conversation state
   aiState.update([
@@ -74,9 +76,7 @@ const sendMessage = async (message: string) => {
   ]);
 
   // Set up streaming UI
-  const uiStream = createStreamableUI();
-  const textStream = createStreamableValue("");
-  uiStream.update(<TextStreamMessage content={textStream.value} />);
+  const uiStream = createStreamableUI(<div className="text-sm text-muted-foreground">Thinking...</div>);
 
   const finishWithError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -86,55 +86,60 @@ const sendMessage = async (message: string) => {
       ? "Rate limit reached. Please wait a moment and try again."
       : "Something went wrong. Please try again.";
     
-    textStream.done();
     aiState.done([...(aiState.get() as CoreMessage[]), { role: "assistant", content: displayMsg }]);
-    uiStream.update(<Message role="assistant" content={displayMsg} isError />);
-    uiStream.done();
+    uiStream.done(<div className="text-sm text-red-500">{displayMsg}</div>);
   };
 
   // Process in background
   (async () => {
+    logger.info("Starting stream processing");
+    const messages = aiState.get() as CoreMessage[];
+    logger.info("Messages to send", { count: messages.length, messages: JSON.stringify(messages) });
     try {
       const response = await streamText({
         model: google(process.env.GOOGLE_MODEL ?? "gemini-2.5-flash"),
-        system: `You are a helpful shopping assistant for a UK-based home decor store.
-
-CRITICAL RULES:
-- Always show prices in GBP (£)
-- Use British English (en-GB) for all product information
-- Format prices correctly: divide centAmount by 100 (e.g., 3299 → £32.99)
-- Show product images when available
-- Be concise but helpful
-
-CART RULES:
-- When creating a cart, ALWAYS use currency: "GBP" and country: "GB"
-- Use the product's SKU or productId when adding items
-- The user's anonymousId is automatically injected into cart calls
-- To read the user's cart, use read_cart with where: ["anonymousId=\\"${anonymousId}\\""]
-- Never ask the user for their cart ID or customer ID - use the anonymousId filter`,
-        messages: aiState.get() as CoreMessage[],
+        system: SHOPPING_ASSISTANT_PROMPT,
+        messages,
         tools,
         maxSteps: 3,
+        onStepFinish: (step) => {
+          logger.debug("Step finished", { 
+            finishReason: step.finishReason,
+            hasToolCalls: step.toolCalls?.length ?? 0,
+            hasToolResults: step.toolResults?.length ?? 0,
+          });
+        },
       });
 
       let fullText = "";
+      let productsAppended = false;
+      let lastProducts: import("@/types/commerce").ProductCard[] = [];
 
       for await (const part of response.fullStream) {
+        logger.debug("Stream part", { type: part.type });
         switch (part.type) {
           case "text-delta":
             fullText += part.textDelta;
-            textStream.update(fullText);
+            break;
+
+          case "tool-call":
+            if (part.toolName.toLowerCase().includes("product")) {
+              uiStream.update(<ProductGridSkeleton />);
+            }
             break;
 
           case "tool-result": {
-            const { toolName, result } = part.result as { toolName: string; result: unknown };
-            const parsed = extractJsonFromToolContent((result as any)?.content) ?? result;
-
-            if (toolName.toLowerCase().includes("product")) {
+            const { toolName, result } = (part as any).result ?? {};
+            logger.debug("Tool result received", { toolName, hasResult: !!result });
+            
+            if (toolName?.toLowerCase().includes("product")) {
+              const parsed = extractJsonFromToolContent((result as any)?.content) ?? result;
               const products = normalizeProducts(parsed);
-              logger.info("Products loaded", { count: products.length });
+              logger.info("Products normalized", { count: products.length, first: products[0] });
               if (products.length > 0) {
-                uiStream.append(<ProductGrid title="Results" products={products} />);
+                lastProducts = products;
+                uiStream.update(<ProductGrid title="Results" products={products} />);
+                productsAppended = true;
               }
             }
             break;
@@ -145,16 +150,26 @@ CART RULES:
         }
       }
 
-      textStream.done();
       aiState.done([
         ...(aiState.get() as CoreMessage[]),
         { role: "assistant", content: fullText || "Done" },
       ]);
 
-      if (!fullText) {
-        uiStream.update(<></>);
+      // Final UI: preserve products if shown, add text if any
+      if (productsAppended && fullText) {
+        uiStream.done(
+          <div className="flex flex-col gap-3">
+            <ProductGrid title="Results" products={lastProducts} />
+            <Message role="assistant" content={fullText} />
+          </div>
+        );
+      } else if (productsAppended) {
+        uiStream.done(<ProductGrid title="Results" products={lastProducts} />);
+      } else if (fullText) {
+        uiStream.done(<Message role="assistant" content={fullText} />);
+      } else {
+        uiStream.done();
       }
-      uiStream.done();
 
     } catch (err) {
       finishWithError(err);

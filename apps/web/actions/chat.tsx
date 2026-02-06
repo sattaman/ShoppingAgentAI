@@ -3,7 +3,7 @@
 import { TextStreamMessage, Message } from "@/components/chat";
 import { ProductGrid } from "@/components/commerce";
 import { google } from "@ai-sdk/google";
-import { CoreMessage, generateId, streamText, tool } from "ai";
+import { CoreMessage, generateId, streamText, tool, jsonSchema } from "ai";
 import {
   createAI,
   createStreamableUI,
@@ -11,10 +11,29 @@ import {
   getMutableAIState,
 } from "ai/rsc";
 import { ReactNode } from "react";
+import { z } from "zod";
 import { callMcpTool, getMcpTools } from "@/lib/mcp";
-import { buildZodSchema } from "@/lib/schema";
 import { extractJsonFromToolContent, normalizeProducts } from "@/lib/commerce";
 import { logger } from "@/lib/logger";
+import { getOrCreateAnonymousId } from "@/lib/session";
+
+// Tools that need anonymousId injected
+const CART_TOOLS = ["create_cart", "read_cart", "update_cart"];
+
+// Manual schema overrides for tools with vague schemas
+const toolOverrides: Record<string, z.ZodTypeAny> = {
+  search_products: z.object({
+    query: z.object({
+      fullText: z.object({
+        field: z.string().default("name").describe('Field to search in. Use "name" for product names'),
+        language: z.string().default("en-GB").describe('Language code. MUST use "en-GB" for English products'),
+        value: z.string().describe('The search term, e.g., "chairs"'),
+      }).describe('Full-text search query'),
+    }).describe('Search query object. Example: {"fullText": {"field": "name", "language": "en-GB", "value": "chairs"}}'),
+    limit: z.number().min(1).max(100).optional(),
+    offset: z.number().min(0).optional(),
+  }),
+};
 
 const sendMessage = async (message: string) => {
   "use server";
@@ -22,21 +41,27 @@ const sendMessage = async (message: string) => {
   logger.info("Chat request", { message });
 
   const aiState = getMutableAIState<typeof AI>("messages");
+  const anonymousId = await getOrCreateAnonymousId();
   
   // Load MCP tools
   const mcpTools = await getMcpTools();
-  logger.debug("Tools available", { count: mcpTools.tools.length });
+  logger.debug("Tools available", { count: mcpTools.tools.length, tools: mcpTools.tools.map(t => ({ name: t.name, schema: JSON.stringify(t.inputSchema) })) });
 
   // Convert MCP tools to AI SDK format
   const tools: Record<string, any> = {};
   for (const mcpTool of mcpTools.tools) {
     tools[mcpTool.name] = tool({
       description: mcpTool.description ?? "",
-      parameters: buildZodSchema(mcpTool.inputSchema as any),
+      parameters: toolOverrides[mcpTool.name] ?? jsonSchema(mcpTool.inputSchema),
       execute: async (args) => {
-        logger.info("Tool call", { tool: mcpTool.name, args });
-        const result = await callMcpTool(mcpTool.name, args);
-        logger.debug("Tool response", { tool: mcpTool.name });
+        // Inject anonymousId for cart operations
+        const finalArgs = CART_TOOLS.includes(mcpTool.name)
+          ? { ...args, anonymousId }
+          : args;
+        
+        logger.info("Tool call", { tool: mcpTool.name, args: JSON.stringify(finalArgs) });
+        const result = await callMcpTool(mcpTool.name, finalArgs);
+        logger.debug("Tool response", { tool: mcpTool.name, result: JSON.stringify(result).substring(0, 200) });
         return { toolName: mcpTool.name, result };
       },
     });
@@ -55,7 +80,7 @@ const sendMessage = async (message: string) => {
 
   const finishWithError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    logger.error("Chat failed", { error: message });
+    logger.error("Chat failed", { error: message, stack: error instanceof Error ? error.stack : undefined });
     
     const displayMsg = message.includes("quota") || message.includes("rate")
       ? "Rate limit reached. Please wait a moment and try again."
@@ -72,7 +97,21 @@ const sendMessage = async (message: string) => {
     try {
       const response = await streamText({
         model: google(process.env.GOOGLE_MODEL ?? "gemini-2.5-flash"),
-        system: "You are an AI shopping assistant. Use tools to search products. Be concise.",
+        system: `You are a helpful shopping assistant for a UK-based home decor store.
+
+CRITICAL RULES:
+- Always show prices in GBP (£)
+- Use British English (en-GB) for all product information
+- Format prices correctly: divide centAmount by 100 (e.g., 3299 → £32.99)
+- Show product images when available
+- Be concise but helpful
+
+CART RULES:
+- When creating a cart, ALWAYS use currency: "GBP" and country: "GB"
+- Use the product's SKU or productId when adding items
+- The user's anonymousId is automatically injected into cart calls
+- To read the user's cart, use read_cart with where: ["anonymousId=\\"${anonymousId}\\""]
+- Never ask the user for their cart ID or customer ID - use the anonymousId filter`,
         messages: aiState.get() as CoreMessage[],
         tools,
         maxSteps: 3,

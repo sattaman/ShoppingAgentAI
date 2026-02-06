@@ -29,27 +29,47 @@ export function extractJsonFromToolContent(content: Array<any>): unknown | null 
 
 function findArray(data: any): any[] {
   if (!data || typeof data !== "object") return [];
-  return data.results || data.products || data.items || data.productProjections || [];
+  
+  // Unwrap MCP response wrappers like "LIST PRODUCTS RESULT" or "SEARCH PRODUCTS RESULT"
+  const keys = Object.keys(data);
+  if (keys.length === 1 && keys[0].includes("RESULT")) {
+    data = data[keys[0]];
+  }
+  
+  const arr = data.results || data.products || data.items || data.productProjections || [];
+  
+  // Search results have productProjection nested inside each result
+  if (arr.length > 0 && arr[0].productProjection) {
+    return arr.map((item: any) => item.productProjection);
+  }
+  
+  return arr;
 }
 
 export function normalizeProducts(data: unknown): ProductCard[] {
   const list = findArray(data);
   return list
     .map((item: any) => {
-      const masterVariant = item?.masterVariant ?? item?.variant ?? {};
-      const images = masterVariant?.images ?? item?.images ?? [];
+      // Handle commercetools Product structure: masterData.current contains the actual data
+      const current = item?.masterData?.current ?? item;
+      const masterVariant = current?.masterVariant ?? item?.masterVariant ?? item?.variant ?? {};
+      const images = masterVariant?.images ?? current?.images ?? item?.images ?? [];
       const firstImage = images?.[0]?.url ?? images?.[0];
       const priceValue =
         masterVariant?.prices?.[0]?.value ??
         masterVariant?.price?.value ??
         item?.price?.value;
       const name =
-        item?.name?.en || item?.name?.["en-US"] || item?.name || "Unnamed product";
+        current?.name?.["en-GB"] || current?.name?.en || current?.name?.["en-US"] || 
+        item?.name?.["en-GB"] || item?.name?.en || item?.name?.["en-US"] || item?.name || "Unnamed product";
+      const description = 
+        current?.description?.["en-GB"] || current?.description?.en || 
+        item?.description?.["en-GB"] || item?.description?.en || item?.description;
 
       return {
         id: item?.id ?? item?.key ?? "unknown",
         name,
-        description: item?.description?.en || item?.description?.["en-US"] || item?.description,
+        description,
         imageUrl: typeof firstImage === "string" ? firstImage : undefined,
         price: formatMoney(priceValue?.centAmount, priceValue?.currencyCode),
         sku: masterVariant?.sku ?? item?.sku,

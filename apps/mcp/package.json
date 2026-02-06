@@ -6,6 +6,6 @@
     "dotenv-cli": "^7.4.2"
   },
   "scripts": {
-    "dev": "dotenv -e .env.local -- npx -y @commercetools/commerce-mcp --remote=true --stateless=true --port=8888 --toolOutputFormat=json --authType=client_credentials --tools=product-search.read,products.read,cart.create,cart.read,cart.update,shipping-methods.read,order.create"
+    "dev": "dotenv -e .env.local -- npx -y @commercetools/commerce-mcp --remote=true --stateless=true --port=8888 --toolOutputFormat=json --authType=client_credentials --dynamicToolLoadingThreshold=50 --tools=product-search.read,products.read,cart.create,cart.read,cart.update,shipping-methods.read,order.create"
   }
 }

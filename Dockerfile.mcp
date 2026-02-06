@@ -1,0 +1,5 @@
+FROM node:20-slim
+ENV PNPM_HOME=/usr/local/bin
+RUN npm install -g pnpm && pnpm install -g @commercetools/commerce-mcp@latest
+EXPOSE 8888
+CMD ["commerce-mcp", "--remote=true", "--stateless=true", "--port=8888", "--toolOutputFormat=json", "--authType=client_credentials", "--dynamicToolLoadingThreshold=50", "--tools=product-search.read,products.read,cart.create,cart.read,cart.update,shipping-methods.read,order.create"]
